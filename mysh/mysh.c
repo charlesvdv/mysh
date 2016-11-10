@@ -25,9 +25,7 @@ char** get_cmd_array(int fd) {
         free(str);
         return NULL;
     }
-    if ((++len % BUFFER_SIZE) == 0) {
-        str = realloc(str, len + 1);
-    }
+    str = realloc(str, len+1);
     str[len] = '\0';
 
     // Generate array.
@@ -49,7 +47,7 @@ char** get_cmd_array(int fd) {
 }
 
 void free_cmd(char **array) {
-    for (size_t i = 0; i < (sizeof(array)/sizeof(char*)); i++) {
+    for (size_t i = 0; i <= (sizeof(array)/sizeof(char*)); i++) {
         free(array[i]);
     }
     free(array);
