@@ -4,19 +4,26 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #define BUFFER_SIZE 10
 
-char** get_cmd_array() {
-    // Get str from stdin.
+char** get_cmd_array(int fd) {
+    // Get str from the file descriptor.
     char *str = calloc(BUFFER_SIZE, sizeof(char));
     size_t len = 0;
-    int c;
-    while((c = fgetc(stdin)) != '\n') {
+    int c = 0;
+    while (read(fd, &c, 1) == 1) {
+        if (c == '\n') { break; }
         if ((++len % BUFFER_SIZE) == 0) {
             str = realloc(str, len + BUFFER_SIZE);
         }
         str[len-1] = c;
+    } if (len == 0) {
+        // EOF reached.
+        free(str);
+        return NULL;
     }
     if ((++len % BUFFER_SIZE) == 0) {
         str = realloc(str, len + 1);
@@ -48,11 +55,17 @@ void free_cmd(char **array) {
     free(array);
 }
 
-int main(int argc, char* argv[]) {
+int launch_shell(int fd, int int_mode) {
     while (1) {
+        if (int_mode == 1) {
+            write(fd, "$ ", 2);
+        }
         // Get command.
-        printf("$ ");
-        char **cmd = get_cmd_array();
+        char **cmd = get_cmd_array(fd);
+        if (cmd == NULL) {
+            // We reached an EOF.
+            return EXIT_SUCCESS;
+        }
 
         // Execute command.
         pid_t pid = fork();
@@ -60,12 +73,12 @@ int main(int argc, char* argv[]) {
             // In the child.
             if (execvp(cmd[0], cmd) == -1) {
                 free_cmd(cmd);
-                exit(EXIT_FAILURE);
+                return EXIT_FAILURE;
             }
         } else if (pid == -1) {
             // Error.
             free_cmd(cmd);
-            exit(EXIT_FAILURE);
+            return EXIT_FAILURE;
         } else {
             // In the parent.
             pid_t w;
@@ -75,9 +88,28 @@ int main(int argc, char* argv[]) {
             if (w == -1) {
                 // Error.
                 free_cmd(cmd);
-                exit(EXIT_FAILURE);
+                return EXIT_FAILURE;
             }
         }
         free_cmd(cmd);
     }
+}
+
+int main(int argc, char* argv[]) {
+    int int_mode = 1;
+    if (argc != 1) {
+        // Shell is in batch mode.
+        int_mode = 0;
+        for (int i = 1; i < argc; i++) {
+            int script_fd = open(argv[i], 0);
+            int status = launch_shell(script_fd, int_mode);
+            close(script_fd);
+            if (status == EXIT_FAILURE) {
+                return EXIT_FAILURE;
+            }
+        }
+        return EXIT_SUCCESS;
+    }
+    launch_shell(STDIN_FILENO, int_mode);
+    return EXIT_SUCCESS;
 }
