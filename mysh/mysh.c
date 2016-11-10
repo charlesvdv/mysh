@@ -65,6 +65,25 @@ int launch_shell(int fd, int int_mode) {
             return EXIT_SUCCESS;
         }
 
+        // Implement exit.
+        size_t cmd_size = 0;
+        for ( ; cmd[cmd_size] != NULL; cmd_size++);
+        if (strncmp(cmd[0], "exit", 4) == 0) {
+            if (cmd_size == 2) {
+                int status = atoi(cmd[1]);
+                free_cmd(cmd);
+                return status;
+            }
+            free_cmd(cmd);
+            if (cmd_size == 1) {
+                return EXIT_SUCCESS;
+            } else {
+                // Error.
+                printf("mysh: unknow option for exit");
+                return EXIT_FAILURE;
+            }
+        }
+
         // Execute command.
         pid_t pid = fork();
         if (pid == 0) {
@@ -108,6 +127,6 @@ int main(int argc, char* argv[]) {
         }
         return EXIT_SUCCESS;
     }
-    launch_shell(STDIN_FILENO, int_mode);
-    return EXIT_SUCCESS;
+    int status = launch_shell(STDIN_FILENO, int_mode);
+    return status;
 }
