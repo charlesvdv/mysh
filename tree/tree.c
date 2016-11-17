@@ -291,18 +291,20 @@ int main (int argc, char *argv[]) {
         }
     }
 
-    argc -= optind;
-    if (argc == 0) {
-        // Run the command for the current directory.
+    // Run the command for the current directory.
+    if (argc - optind == 0) {
         build_inode_tree(".");
         print_dirtree(TREE, TREE->discovered + 1, ignore_dirs, depht);
         free_tree();
         return EXIT_SUCCESS;
     }
-    for (int i = 1; i <= argc; i++) {
+    for (int i = optind; i < argc; i++) {
         build_inode_tree(argv[i]);
         print_dirtree(TREE, TREE->discovered + 1,ignore_dirs, depht);
         free_tree();
+        if (i == optind && (i+1) != argc) {
+            printf("\n");
+        }
     }
     return EXIT_SUCCESS;
 }
