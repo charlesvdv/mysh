@@ -1,6 +1,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -222,11 +223,28 @@ void print_dirtree(INODE *i, int discovered, char **ignored_dir, int max_depht) 
     // Directory is empty.
     if (gremlin == NULL) { return; }
 
+    // Check for cli options.
+    if (i->depth + 1 >= max_depht) { return; }
+    for (int j = 0; ignored_dir[j] != NULL; j++) {
+        if (strcmp(i->name, ignored_dir[j]) == 0) {
+            return;
+        }
+    }
+
     while(1) {
         if (gremlin->discovered == discovered) {
             break;
         }
-        print_inode(gremlin);
+
+        bool found = false;
+        for (int j = 0; ignored_dir[j] != NULL; j++) {
+            if (strcmp(gremlin->name, ignored_dir[j]) == 0) {
+                found = true;
+            }
+        }
+        if (! found) {
+            print_inode(gremlin);
+        }
         if (gremlin->isdir) {
             print_dirtree(gremlin, discovered, ignored_dir, max_depht);
         }
@@ -238,7 +256,7 @@ void print_dirtree(INODE *i, int discovered, char **ignored_dir, int max_depht) 
 
 int main (int argc, char *argv[]) {
     int c;
-    int depht = 0;
+    int depht = INT_MAX;
     char *ignore_dirs[IGNORE_DIRS_SIZE] = {0};
 
     while ((c = getopt_long(argc, argv, "hI:L:", longopts, NULL)) != -1) {
