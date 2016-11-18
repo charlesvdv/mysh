@@ -28,14 +28,14 @@ char** get_cmd_array(int fd) {
     str = realloc(str, len+1);
     str[len] = '\0';
 
-    // Generate array.
+    // Generate array by splitting the str by spaces.
     char **array = NULL;
     char *word = strtok(str, " ");
     int word_num = 0;
     while(word) {
         array = realloc(array, sizeof(char*) * ++word_num);
         array[word_num-1] = (char*) calloc(strlen(word)+1, sizeof(char));
-        array[word_num-1] = strncpy(array[word_num-1], word, strlen(word));
+        array[word_num-1] = strncpy(array[word_num-1], word, strlen(word)+1);
         word = strtok(NULL, " ");
     }
     // Add a NULL char at the end of the array for exec().
@@ -47,7 +47,7 @@ char** get_cmd_array(int fd) {
 }
 
 void free_cmd(char **array) {
-    for (size_t i = 0; i <= (sizeof(array)/sizeof(char*)); i++) {
+    for (size_t i = 0; array[i] != NULL; i++) {
         free(array[i]);
     }
     free(array);
@@ -58,17 +58,21 @@ int launch_shell(int fd, int int_mode) {
         if (int_mode == 1) {
             write(fd, "$ ", 2);
         }
+
         // Get command.
         char **cmd = get_cmd_array(fd);
         if (cmd == NULL) {
-            // We reached an EOF.
-            return EXIT_SUCCESS;
+            if (! int_mode) {
+                // We reached an EOF.
+                return EXIT_SUCCESS;
+            }
+            continue;
         }
 
         // Implement exit.
         size_t cmd_size = 0;
         for ( ; cmd[cmd_size] != NULL; cmd_size++);
-        if (strncmp(cmd[0], "exit", 4) == 0) {
+        if (strcmp(cmd[0], "exit") == 0) {
             if (cmd_size == 2) {
                 int status = atoi(cmd[1]);
                 free_cmd(cmd);
@@ -113,7 +117,8 @@ int launch_shell(int fd, int int_mode) {
 }
 
 int main(int argc, char* argv[]) {
-    int int_mode = 1;
+    int int_mode = 1; // Interactive mode.
+
     if (argc != 1) {
         // Shell is in batch mode.
         int_mode = 0;
