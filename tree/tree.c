@@ -32,7 +32,6 @@ typedef struct inode {
     bool isdir;
     char *name;
     int fd;
-    int discovered; // Used for the DFS algorithm.
     int depth;
     struct inode *children; // First children.
     struct inode *parent;
@@ -89,7 +88,6 @@ void set_children(INODE *i) {
             child->name = malloc(strlen(d->d_name) + 1);
             strncpy(child->name, d->d_name, strlen(d->d_name));
             child->name[strlen(d->d_name)] = '\0';
-            child->discovered = 0;
             child->depth = i->depth + 1;
 
             child->isdir = (d_type == DT_DIR);
@@ -114,21 +112,16 @@ void set_children(INODE *i) {
     }
 }
 
-void recurse_build_tree(INODE *i, int discovered) {
-    if (i == NULL) { return; }
+void recurse_build_tree(INODE *i) {
     INODE *gremlin = i;
     while(1) {
         if (gremlin == NULL) { return; }
-        if (gremlin->discovered == discovered) {
-            return;
-        }
         if (gremlin->isdir) {
             set_children(gremlin);
-            recurse_build_tree(gremlin->children, discovered);
+            recurse_build_tree(gremlin->children);
         }
         gremlin = gremlin->next;
     }
-    i->discovered++;
 }
 
 int build_inode_tree(char *name) {
@@ -150,10 +143,9 @@ int build_inode_tree(char *name) {
     TREE->next = NULL;
     TREE->parent = NULL;
     TREE->children = NULL;
-    TREE->discovered = 0;
     TREE->depth = 0;
 
-    recurse_build_tree(TREE, TREE->discovered + 1);
+    recurse_build_tree(TREE);
     return 0;
 }
 
@@ -164,16 +156,13 @@ void free_inode(INODE *i) {
     free(i);
 }
 
-void clean_tree(INODE *i, int discovered) {
+void clean_tree(INODE *i) {
     INODE *gremlin = i;
     while(1) {
         if (gremlin == NULL) { break; }
-        if (gremlin->discovered == discovered) {
-            break;
-        }
 
         if (gremlin->isdir) {
-            clean_tree(gremlin->children, discovered);
+            clean_tree(gremlin->children);
         }
 
         INODE *old_gremlin = gremlin;
@@ -184,7 +173,7 @@ void clean_tree(INODE *i, int discovered) {
 }
 
 void free_tree() {
-    clean_tree(TREE, TREE->discovered + 1);
+    clean_tree(TREE);
 }
 
 void print_inode(INODE *i) {
@@ -213,19 +202,13 @@ bool is_in_array(char *str, char **array) {
     return false;
 }
 
-void print_dirtree(INODE *i, int discovered, char **ignored_dir, int max_depht) {
-    // Check if directory is empty.
-    if (i == NULL) { return; }
-
+void print_dirtree(INODE *i, char **ignored_dir, int max_depht) {
     // Check for cli options.
     if (i->depth + 1 >= max_depht) { return; }
 
     INODE *gremlin = i;
     while(1) {
         if (gremlin == NULL) { break; }
-        if (gremlin->discovered == discovered) {
-            break;
-        }
 
         bool found = is_in_array(gremlin->name, ignored_dir);
         if (! found) {
@@ -233,12 +216,11 @@ void print_dirtree(INODE *i, int discovered, char **ignored_dir, int max_depht) 
         }
 
         if (gremlin->isdir && ! found) {
-            print_dirtree(gremlin->children, discovered, ignored_dir, max_depht);
+            print_dirtree(gremlin->children, ignored_dir, max_depht);
         }
 
         gremlin = gremlin->next;
     }
-    i->discovered++;
 }
 
 int main (int argc, char *argv[]) {
@@ -281,14 +263,14 @@ int main (int argc, char *argv[]) {
     // Run the command for the current directory.
     if (argc - optind == 0) {
         build_inode_tree(".");
-        print_dirtree(TREE, TREE->discovered + 1, ignore_dirs, depht);
+        print_dirtree(TREE, ignore_dirs, depht);
         free_tree();
         return EXIT_SUCCESS;
     }
 
     for (int i = optind; i < argc; i++) {
         build_inode_tree(argv[i]);
-        print_dirtree(TREE, TREE->discovered + 1,ignore_dirs, depht);
+        print_dirtree(TREE,ignore_dirs, depht);
         free_tree();
         // Linebreak to split differents paths.
         if (i == optind && (i+1) != argc) {
