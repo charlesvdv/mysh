@@ -28,6 +28,7 @@ struct linux_dirent {
     char           d_name[];
 };
 
+// Define a file or a directory.
 typedef struct inode {
     bool isdir;
     char *name;
@@ -40,6 +41,8 @@ typedef struct inode {
 
 INODE *TREE;
 
+// ********** Helper functions **********
+
 int is_directory(int fd) {
     struct stat sb;
     if (fstat(fd, &sb) == -1) {
@@ -48,7 +51,20 @@ int is_directory(int fd) {
     return S_ISDIR(sb.st_mode);
 }
 
-void set_children(INODE *i) {
+// Helper function to test if a given str is in an array of str.
+bool is_in_array(char *str, char **array) {
+    for (int i = 0; array[i] != NULL; i++) {
+        if (strcmp(str, array[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// ********** Inode functions **********
+
+// Set children for a given dir.
+void set_inode_children(INODE *i) {
     INODE *child = NULL;
     INODE *last_child;
     bool first = true;
@@ -64,10 +80,11 @@ void set_children(INODE *i) {
         char d_type;
 
         nread = syscall(SYS_getdents, i->fd, buf, BUF_SIZE);
+        // Error.
         if (nread == -1) {
-            // Error.
             exit(EXIT_FAILURE);
         }
+        // End of read.
         if (nread == 0) {
             if (child != NULL) {
                 child->next = NULL;
@@ -76,6 +93,7 @@ void set_children(INODE *i) {
             }
             break;
         }
+
         for (int bpos = 0; bpos < nread; bpos += d->d_reclen) {
             d = (struct linux_dirent *) (buf + bpos);
             d_type = *(buf + bpos + d->d_reclen - 1);
@@ -88,16 +106,15 @@ void set_children(INODE *i) {
             child->name = malloc(strlen(d->d_name) + 1);
             strncpy(child->name, d->d_name, strlen(d->d_name));
             child->name[strlen(d->d_name)] = '\0';
-            child->depth = i->depth + 1;
 
             child->isdir = (d_type == DT_DIR);
+            child->depth = i->depth + 1;
             child->parent = i;
 
             // Get the fd for the child only if the child is a dir.
+            child->fd = -1;
             if (child->isdir) {
                 child->fd = openat(i->fd, child->name, O_RDONLY);
-            } else {
-                child->fd = -1;
             }
 
             if (first) {
@@ -112,19 +129,91 @@ void set_children(INODE *i) {
     }
 }
 
+void print_inode(INODE *i) {
+    char *str = calloc(100, sizeof(char));
+    int offset;
+    for (offset = 0; offset < i->depth * 2; offset++) {
+        str[offset] = ' ';
+    }
+    str[offset] = '\0';
+    strcat(str, i->name);
+    if (i->isdir) {
+        offset += strlen(i->name);
+        str[offset] = '/';
+        str[offset+1] = '\0';
+    }
+    printf("%s\n", str);
+    free(str);
+}
+
+
+// Free a given inode and close file if needed.
+void free_inode(INODE *i) {
+    if (i->fd != -1) { close(i->fd); }
+    free(i->name);
+    free(i);
+}
+
+// ********** Recursive traversing tree functions **********
+
+// Recursively build the tree by setting children for dir tree.
 void recurse_build_tree(INODE *i) {
     INODE *gremlin = i;
     while(1) {
         if (gremlin == NULL) { return; }
         if (gremlin->isdir) {
-            set_children(gremlin);
+            set_inode_children(gremlin);
             recurse_build_tree(gremlin->children);
         }
         gremlin = gremlin->next;
     }
 }
 
-int build_inode_tree(char *name) {
+void recursive_print_tree(INODE *i, int max_depth, char **ignore_dirs) {
+    // Check if directory is not empty.
+    if (i == NULL) { return; }
+
+    // Check for cli options.
+    if (i->depth + 1 >= max_depth) { return; }
+
+    INODE *gremlin = i;
+    while(1) {
+        if (gremlin == NULL) { break; }
+
+        bool found = is_in_array(gremlin->name, ignore_dirs);
+        if (! found) {
+            print_inode(gremlin);
+        }
+
+        if (gremlin->isdir && ! found) {
+            recursive_print_tree(gremlin->children, max_depth, ignore_dirs);
+        }
+
+        gremlin = gremlin->next;
+    }
+}
+
+// Recursively free the inode and his children.
+void recurse_free_tree(INODE *i) {
+    INODE *gremlin = i;
+    while(1) {
+        if (gremlin == NULL) { break; }
+
+        if (gremlin->isdir) {
+            recurse_free_tree(gremlin->children);
+        }
+
+        INODE *old_gremlin = gremlin;
+        gremlin = gremlin->next;
+
+        free_inode(old_gremlin);
+    }
+}
+
+// ********** API functions **********
+
+// Build a directory tree from a pathname.
+int init_tree(char *name) {
     // Get the file descriptor.
     int fd = open(name, O_RDONLY);
     // Initialize the first inode.
@@ -149,90 +238,30 @@ int build_inode_tree(char *name) {
     return 0;
 }
 
-
-void free_inode(INODE *i) {
-    if (i->fd != -1) { close(i->fd); }
-    free(i->name);
-    free(i);
-}
-
-void clean_tree(INODE *i) {
-    INODE *gremlin = i;
-    while(1) {
-        if (gremlin == NULL) { break; }
-
-        if (gremlin->isdir) {
-            clean_tree(gremlin->children);
-        }
-
-        INODE *old_gremlin = gremlin;
-        gremlin = gremlin->next;
-
-        free_inode(old_gremlin);
-    }
+void print_tree(int depth, char **ignore_dirs) {
+    recursive_print_tree(TREE, depth, ignore_dirs);
 }
 
 void free_tree() {
-    clean_tree(TREE);
+    recurse_free_tree(TREE);
 }
 
-void print_inode(INODE *i) {
-    char *str = calloc(100, sizeof(char));
-    int offset;
-    for (offset = 0; offset < i->depth * 2; offset++) {
-        str[offset] = ' ';
-    }
-    str[offset] = '\0';
-    strcat(str, i->name);
-    if (i->isdir) {
-        offset += strlen(i->name);
-        str[offset] = '/';
-        str[offset+1] = '\0';
-    }
-    printf("%s\n", str);
-    free(str);
-}
-
-bool is_in_array(char *str, char **array) {
-    for (int i = 0; array[i] != NULL; i++) {
-        if (strcmp(str, array[i]) == 0) {
-            return true; 
-        } 
-    }
-    return false;
-}
-
-void print_dirtree(INODE *i, char **ignored_dir, int max_depht) {
-    // Check for cli options.
-    if (i->depth + 1 >= max_depht) { return; }
-
-    INODE *gremlin = i;
-    while(1) {
-        if (gremlin == NULL) { break; }
-
-        bool found = is_in_array(gremlin->name, ignored_dir);
-        if (! found) {
-            print_inode(gremlin);
-        }
-
-        if (gremlin->isdir && ! found) {
-            print_dirtree(gremlin->children, ignored_dir, max_depht);
-        }
-
-        gremlin = gremlin->next;
-    }
-}
+// ********** Main **********
 
 int main (int argc, char *argv[]) {
     int c;
-    int depht = INT_MAX;
+    int depth = INT_MAX;
     char *ignore_dirs[IGNORE_DIRS_SIZE] = {0};
 
     while ((c = getopt_long(argc, argv, "hI:L:", longopts, NULL)) != -1) {
         switch (c) {
             case 'h':
                 // Help.
-                break;
+                printf("usage: tree [-I|--ignore dir] [-L|--level level] [--] [directory list]\n" \
+                        "  ----- Options -----\n" \
+                        "  -I\tDo not list directory equals to dir.\n" \
+                        "  -L\tDescend only level directories deep.\n");
+                return EXIT_SUCCESS;
             case 'I':
                 // Directory to ignore.
                 ;
@@ -246,8 +275,8 @@ int main (int argc, char *argv[]) {
                 ignore_dirs[offset] = optarg;
                 break;
             case 'L':
-                // Max directory depht.
-                depht = atoi(optarg);
+                // Max directory depth.
+                depth = atoi(optarg);
                 break;
             case ':':
                 // Missing option argument
@@ -262,15 +291,15 @@ int main (int argc, char *argv[]) {
 
     // Run the command for the current directory.
     if (argc - optind == 0) {
-        build_inode_tree(".");
-        print_dirtree(TREE, ignore_dirs, depht);
+        init_tree(".");
+        print_tree(depth, ignore_dirs);
         free_tree();
         return EXIT_SUCCESS;
     }
 
     for (int i = optind; i < argc; i++) {
-        build_inode_tree(argv[i]);
-        print_dirtree(TREE,ignore_dirs, depht);
+        init_tree(argv[i]);
+        print_tree(depth, ignore_dirs);
         free_tree();
         // Linebreak to split differents paths.
         if (i == optind && (i+1) != argc) {
