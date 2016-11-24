@@ -1,13 +1,17 @@
+#include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <sys/stat.h>
 
 #define BUFFER_SIZE 10
+
+int bg_pid = 0;
 
 char** get_cmd_array(int fd) {
     // Get str from the file descriptor.
@@ -53,8 +57,28 @@ void free_cmd(char **array) {
     free(array);
 }
 
+int detect_bg_job(char **cmd) {
+    int index = 0;
+    int found = 0;
+    for ( ; cmd[index] != NULL; index++) {
+        if (strncmp(cmd[index], "&", 2) == 0 ) {
+            found = 1;
+        }
+    }
+
+    // Remove the & from the cmd array.
+    if (found) {
+        for (int i = index - 1; cmd[i] != NULL; i++) {
+            cmd[i] = cmd[i+1];
+        }
+    }
+    return found;
+}
+
 int launch_shell(int fd, int int_mode) {
     while (1) {
+        int bg_mode =  0;
+
         if (int_mode == 1) {
             write(fd, "$ ", 2);
         }
@@ -88,24 +112,59 @@ int launch_shell(int fd, int int_mode) {
             }
         }
 
+        // Check if the background job is done.
+        waitpid(bg_pid, NULL, WNOHANG);
+        if (bg_pid != 0 && kill(bg_pid, 0) == -1) {
+            bg_pid = 0;
+        }
+
+        // Handle foreground cmd.
+        if (cmd_size == 1 && strcmp(cmd[0], "fg") == 0) {
+            if (bg_pid == 0) {
+                printf("No background process.\n");
+            } else {
+                printf("Process %i is now in foreground.\n", bg_pid);
+                waitpid(bg_pid, NULL, 0);
+            }
+            continue;
+        }
+
+        // Handle background job.
+        if (detect_bg_job(cmd)) {
+            if (bg_pid == 0) {
+                bg_mode = 1;
+            } else {
+                fprintf(stderr, "%s will be running in foreground because %i is " \
+                        "already running in background.\n", cmd[0], bg_pid);
+            }
+        }
+
         // Execute command.
         pid_t pid = fork();
         if (pid == 0) {
             // In the child.
+            int status = EXIT_SUCCESS;
             if (execvp(cmd[0], cmd) == -1) {
-                free_cmd(cmd);
-                return EXIT_FAILURE;
+                fprintf(stderr, "mysh: Unable to find %s.\n", cmd[0]);
+                status = EXIT_FAILURE;
             }
+            free_cmd(cmd);
+            return status;
         } else if (pid == -1) {
             // Error.
             free_cmd(cmd);
             return EXIT_FAILURE;
         } else {
             // In the parent.
+            int flag = 0;
             pid_t w;
             int wstatus;
+            if (bg_mode) {
+                bg_pid = pid;
+                flag = WNOHANG;
+            }
             // Wait until child terminaison.
-            w = waitpid(pid, &wstatus, 0);
+            w = waitpid(pid, &wstatus, flag);
             if (w == -1) {
                 // Error.
                 free_cmd(cmd);
