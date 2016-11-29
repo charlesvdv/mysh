@@ -56,32 +56,32 @@ int main (int argc, char *argv[]) {
     int x;
 
     if (strlen(permission) != 4 | (permission[0] - '0') != 0 | (permission[1] - '0') > 7
-        | (permission[2] - '0') > 7 | (permission[3]  - '0' )> 7) {
-          printf("%c\n", permission[3]);
-      printf("input error \n");
-      exit(EXIT_FAILURE);
+            | (permission[2] - '0') > 7 | (permission[3]  - '0' )> 7) {
+        printf("%c\n", permission[3]);
+        printf("input error \n");
+        exit(EXIT_FAILURE);
     }
 
     if(buf == NULL){
-      printf("no path entered \n");
+        printf("no path entered \n");
     }
 
     if (v == 1){
-      printf("the file %s will be given a %s authorization \n", argv[3], argv[2]);
+        printf("the file %s will be given a %s authorization \n", argv[3], argv[2]);
     }
 
     x = strtol(permission, 0, 8);
     if(chmod (buf,x) < 0){
-      fprintf(stderr, "chmod error\n");
-      exit(EXIT_FAILURE);
+        fprintf(stderr, "chmod error\n");
+        exit(EXIT_FAILURE);
     }
 
     if (v == 1){
-      printf("operation completed \n");
+        printf("operation completed \n");
     }
 
     if (c == 1){
-      printf("the file %s has been given a %s authorization \n", argv[3], argv[2]);
+        printf("the file %s has been given a %s authorization \n", argv[3], argv[2]);
     }
     return EXIT_SUCCESS;
 }
