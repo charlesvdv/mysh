@@ -6,109 +6,148 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <getopt.h>
+#include <string.h>
+#include <stdbool.h>
 
 #define BUF_SIZE 1024
-
-#define handle_error(msg) \
-        do { perror(msg); exit(EXIT_FAILURE); } while (0)
-
-int c = -1;
-int fd,fc,nread;
-char buf[BUF_SIZE];
-char sbuf[BUF_SIZE];
-struct linux_dirent *d;
-struct linux_dirent *sd;
-int bpos;
-char d_type;
-char errno;
-int rval;
+#define EXCLUDE_DIR_SIZE 10
 
 struct linux_dirent {
     unsigned long  d_ino;     /* Inode number */
     unsigned long  d_off;     /* Offset to next linux_dirent */
     unsigned short d_reclen;  /* Length of this linux_dirent */
     char           d_name[];
-}
+};
 
-struct option longopts []{
+struct option longopts[] = {
     {"help", no_argument, 0, 'h'},
-    {"directories", no_argument, 0 'd'},
-    {"all", no_argument, 0, 'a' },
+    {"exclude", no_argument, 0, 'e'},
+    {"all", no_argument, 0, 'a'},
     {0,0,0,0}
 };
 
-int main (int argc, char *argv[]) {
+char** get_file_list(int fd) {
+    char **file_list = malloc(10 * sizeof(char *));
+    int count = 0;
+    while (1) {
+        char buf[BUF_SIZE];
+        int nread = syscall(SYS_getdents, fd, buf, BUF_SIZE);
 
-    int h = 0;
-    int d = 0;
-    int a = 0;
+        if (nread == -1) {
+            exit(EXIT_FAILURE);
+        } if (nread == 0) {
+            break;
+        }
+        struct linux_dirent *d;
+        for (int bpos = 0; bpos < nread; bpos += d->d_reclen) {
+            d = (struct linux_dirent *) (buf + bpos);
+            char d_type = *(buf + bpos + d->d_reclen - 1);
 
-    while ((c = getopt_long(argc, argv, " ", longopts, NULL)) != -1)){
+            if (((count) % 10) == 0) {
+                file_list = realloc(file_list, (count + 10) * sizeof(char*));
+            }
 
-        switch (c){
+            int str_size = strlen(d->d_name) + 1;
+            if (d_type == DT_DIR) { str_size++; }
+            file_list[count] = malloc(str_size);
+            strcpy(file_list[count], d->d_name);
 
-            case 'h':
-                h = 1;
-                break;
-
-            case 'd':
-                d = 1;
-                break;
-
-            case 'a':
-                a = 1;
-                break;
-
-            case '?':
-                fprintf(stderr, "%s: option '-%c' is invalid.\n", argv[0], optopt);
-                return 1;
-
-            default:
-                return 1;
+            if (d_type == DT_DIR) {
+                file_list[count][str_size-2] = '/';
+            }
+            file_list[count][str_size-1] = '\0';
+            count++;
         }
     }
+    file_list = realloc(file_list, (count+1) * sizeof(char*));
+    file_list[count] = NULL;
+    return file_list;
+}
 
-    fd = open(".", O_RDONLY | O_DIRECTORY);
+void free_file_list(char** list) {
+    for (int i = 0; list[i] != NULL; i++) {
+        free(list[i]);
+    }
+    free(list);
+}
 
-    if (fd == -1)
-        handle_error("open");
+void display_file_display(char *path, char *exclude[], int all_f) {
+    int fd = open(path, O_RDONLY);
+    if (fd == -1) {
+        fprintf(stderr, "%s is not a valid directory.\n", path);
+        exit(EXIT_FAILURE);
+    }
 
-    while (1) {
-        nread = syscall(SYS_getdents, fd, buf, BUF_SIZE);
-
-        if (nread == -1)
-            handle_error("getdents");
-
-        if (nread == 0)
-            break;
-
-        if (h == 1){
-            printf("ls help \n");
-            printf("---------------------");
-            printf("-d --directories : includes directories");
-            printf("-a --all : shows hidden files");
-            printf("---------------------");
+    char **file_list = get_file_list(fd);
+    for (int i = 0; file_list[i] != NULL; i++) {
+        // Exclude hidden files or all_f is set
+        if (strncmp(file_list[i], ".", 1) == 0 && !all_f) {
+            continue;
         }
-
-        else {
-            for (bpos = 0; bpos < nread;) {
-                d = (struct linux_dirent *)(buf + bpos);
-                d_type = *(buf + bpos + d->d_reclen - 1);
-
-                if(a!=1 & w !=1 & d_type == DT_REG){
-                    printf("%s\n", d->d_name);
-                }
-
-                if(w == 1 & d_type == DT_DIR){
-                    printf("%s\n", d->d_name);
-                }
-
-                if(a == 1 & d_type != DT_REG & d_type != DT_DIR){
-                    printf("%s\n", d->d_name);
-                }
+        // Exclude from given formats.
+        bool found = false;
+        for (int j = 0; exclude[j] != NULL; j++) {
+            if (strncmp(file_list[i], exclude[j], strlen(exclude[j])) == 0) {
+                found = true;
+                break;
             }
         }
+
+        if (found) { continue; }
+
+        printf("%s ", file_list[i]);
     }
-    close(fd);
-    exit(EXIT_SUCCESS);
+    printf("\n");
+    free_file_list(file_list);
+}
+
+int main (int argc, char *argv[]) {
+    int all_f = 0;
+    char *exclude_format[EXCLUDE_DIR_SIZE] = { 0 };
+
+    int c;
+    while ((c = getopt_long(argc, argv, "hae:", longopts, NULL)) != -1) {
+        switch (c){
+            case 'h':
+                // Print the help.
+                printf("usage: ls [-e|--exclude FORMAT] [-a|--all] -- [FILE]...\n"
+                        "  ----- Options -----\n" \
+                        "  -e\tExclude file based on the format.\n" \
+                        "  -a\tShow hidden files.\n");
+                return EXIT_SUCCESS;
+            case 'e':
+                ;
+                int offset = 0;
+                for ( ; exclude_format[offset] != NULL; offset++);
+                if (offset == EXCLUDE_DIR_SIZE - 1) {
+                    fprintf(stderr, "%s: option '-%c' can't be used more than %i\n",
+                            argv[0], optopt, EXCLUDE_DIR_SIZE);
+                    return EXIT_FAILURE;
+                }
+                exclude_format[offset] = optarg;
+                break;
+            case 'a':
+                all_f = 1;
+                break;
+            case ':':
+                // Missing option argument
+                fprintf(stderr, "%s: option '-%c' requires an argument.\n", argv[0], optopt);
+                break;
+            case '?':
+            default:
+                fprintf(stderr, "%s: option '-%c' is invalid.\n", argv[0], optopt);
+            break;
+        }
+    }
+
+    if ((argc - optind) == 0) {
+         display_file_display(".", exclude_format, all_f);
+         return EXIT_SUCCESS;
+    }
+
+    for (int i = optind; i < argc; i++) {
+        display_file_display(argv[i], exclude_format, all_f);
+    }
+    return EXIT_SUCCESS;
 }
