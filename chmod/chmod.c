@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <getopt.h>
+#include <sys/stat.h>
 
 struct option longopts [] = {
     {"help", no_argument, 0, 'h'},
@@ -14,7 +15,6 @@ struct option longopts [] = {
 
 int main (int argc, char *argv[]) {
 
-    int h = 0;
     int v = 0;
     int c = 0;
     int i = 0;
@@ -25,39 +25,30 @@ int main (int argc, char *argv[]) {
         switch (i){
 
             case 'h':
-                h = 1;
-                break;
-
+              printf("usage: chmod[OPTION]... MODE[MODE]...file ...\n" \
+                      "  ----- Options -----\n" \
+                      "  -v\tWarns what will be made and when action is done.\n" \
+                      "  -c\tTells what has been made once the action is completed.\n");
+                return EXIT_SUCCESS;
             case 'v':
                 v = 1;
                 break;
-
             case 'c':
                 c = 1;
                 break;
-
+            case ':':
+                // Missing option argument
+                fprintf(stderr, "%s: option '-%c' requires an argument.\n", argv[0], optopt);
+                break;
             case '?':
-            if (isprint (optopt))
-              fprintf (stderr, "Unknown option `-%c'.\n", optopt);
-            else
-              fprintf (stderr,"Unknown option character! `\\x%x'.\n", optopt);
-
-                return 1;
-
             default:
-                return 1;
+                fprintf(stderr, "%s: option '-%c' is invalid.\n", argv[0], optopt);
+            break;
         }
     }
     if (argc < 3){
       fprintf(stderr, "chmod error\n");
       exit(EXIT_FAILURE);
-    }
-
-    if (h == 1) {
-      printf("usage: chmod[OPTION]... MODE[MODE]...file ...\n" \
-              "  ----- Options -----\n" \
-              "  -v\tWarns what will be made and when action is done.\n" \
-              "  -c\tTells what has been made once the action is completed.\n");
     }
 
     char *permission = argv[optind];
