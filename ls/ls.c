@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <dirent.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -27,9 +26,18 @@ struct option longopts[] = {
     {0,0,0,0}
 };
 
+int is_directory(int fd) {
+    struct stat sb;
+    if (fstat(fd, &sb) == -1) {
+        exit(EXIT_FAILURE);
+    }
+    return S_ISDIR(sb.st_mode);
+}
+
 char** get_file_list(int fd) {
     char **file_list = malloc(10 * sizeof(char *));
     int count = 0;
+
     while (1) {
         char buf[BUF_SIZE];
         int nread = syscall(SYS_getdents, fd, buf, BUF_SIZE);
@@ -77,6 +85,11 @@ void display_file_display(char *path, char *exclude[], int all_f) {
     if (fd == -1) {
         fprintf(stderr, "%s is not a valid directory.\n", path);
         exit(EXIT_FAILURE);
+    }
+
+    if (! is_directory(fd)) {
+        printf("%s\n", path);
+        return;
     }
 
     char **file_list = get_file_list(fd);
