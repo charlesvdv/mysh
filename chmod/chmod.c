@@ -55,8 +55,8 @@ int main (int argc, char *argv[]) {
     char *buf = argv[optind+1];
     int x;
 
-    if (strlen(permission) != 4 | (permission[0] - '0') != 0 | (permission[1] - '0') > 7
-            | (permission[2] - '0') > 7 | (permission[3]  - '0' )> 7) {
+    if ((strlen(permission) != 4) | ((permission[0] - '0') != 0) | ((permission[1] - '0') > 7)
+            | ((permission[2] - '0') > 7) | ((permission[3]  - '0' )> 7)) {
         printf("%c\n", permission[3]);
         printf("input error \n");
         exit(EXIT_FAILURE);
