@@ -15,3 +15,13 @@ The minishell must have an interactive and a batch mode and it can have backgrou
 - tree
 - ps
 - chmod
+
+## How to compile
+
+In the root of the project.
+```
+    mkdir build && cd build
+    meson .. --prefix /absolute/path/to/the/install/dir
+    ninja
+    ninja install
+```
